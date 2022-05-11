@@ -231,9 +231,10 @@ class TextSystem(object):
             raise ValueError(f"error in loading image:{image_path}")
         return img
 
-    def __call__(self, image_path):
+    def __call__(self, image_path, dt_boxes):
         img = self.load_image(image_path)
         dt_boxes, elapse = self.text_detector(img)
+        # print(dt_boxes)
         print("dt_boxes num : {}, elapse : {}".format(
             len(dt_boxes), elapse))
         if dt_boxes is None or len(dt_boxes) < 1:
@@ -245,7 +246,7 @@ class TextSystem(object):
             tmp_box = copy.deepcopy(dt_boxes[bno])
             img_crop = self.get_rotate_crop_image(img, tmp_box)
             img_crop_list.append(img_crop)
-
+        # img_crop_list.append(img)
         if self.use_angle_cls:
             img_crop_list, angle_list, elapse = self.text_classifier(
                 img_crop_list)

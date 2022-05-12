@@ -1,11 +1,12 @@
 
-from venv import create
+
 import cv2
-from PIL import Image
-import pytesseract
+import queue
 import numpy as np
 import time
+import threading
 from onnxruntime_infer.rapid_ocr_api import TextSystem
+from picamera2.picamera2 import Picamera2
 
 def show_img(name, img):
     cv2.imshow(name, img)
@@ -61,30 +62,96 @@ def create_boxes(bshape):
     box[0][3] = np.array([0, y])
     return box
 
-def ALPR(model, text_sys, image_path):
-    img = cv2.imread(image_path)
+def ALPR(model, text_sys, img):
+    global can_put
     size = img.shape[:2]
     img = cv2.resize(img, (416, 416), interpolation=cv2.INTER_AREA)
     res = model.detect(img, 0.3, 0.2)
-    if len(res) == 3:
+    try:
         classes, confidence, boxes = res
         classes, confidence, boxes = classes[0], confidence[0], boxes[0]
         crop_img = cropImg(img, boxes, size)
         box = []
-    else:
+    except:
         print("could not detect number plate")
         return
-        
+    can_put=False
     name = 'croped.jpg'
     #show_img('croped', crop_img)
     cv2.imwrite(name, crop_img)
-    print(rapidOCR(name, box, text_sys))
+    res = rapidOCR(name, box, text_sys)
+    res = sorted(res, key=lambda tup: tup[1])
+    print(res[0][0])
+    can_put=True
+
+
+def process():
+    global q
+    while True:
+        if q.empty() != True:
+            img = q.get()
+            ALPR(model, text_sys, img)
+        
+def show_video():
+    global q
+    q = queue.Queue()
+    cam = cv2.VideoCapture(-1)
+    cnt = 0
+    while True:
+        cnt+=1
+        ret, img = cam.read()
+        if cnt >= 60 and can_put:
+            q.put(img)
+            cnt = 0
+        cv2.imshow('Imagetest',img)
+        k = cv2.waitKey(1)
+        if k != -1:
+            break
+
+def picam_show():
+    global q
+    global can_put
+    can_put=True
+    q = queue.Queue()
+    cnt = 0
+    picam2 = Picamera2()
+    picam2.configure(picam2.preview_configuration(main={"format": "RGB888", "size": (1024,768)}))
+    picam2.start()
+    while True:
+        cnt+=1
+        img = picam2.capture_array()
+        if cnt >= 45 and can_put:
+            q.put(img)
+            cnt = 0
+        cv2.imshow('te.jpg', img)
+        k = cv2.waitKey(1)
+        if k != -1:
+            break
+    picam2.close()
 
 if __name__ == '__main__':
     model, text_sys = setup()
     img_foloer = './images/'
     img_list = ['car.jpg', 'car4.jpg', 'test.jpg']
-    for i in range(3):
-        ALPR(model, text_sys, (img_foloer+img_list[i]))
+    t = threading.Thread(target=picam_show)
+    t1 = threading.Thread(target=process)
+    t.start()
+    t1.start()   
+    # picam2 = Picamera2()
+    # picam2.configure(picam2.preview_configuration(main={"format": "RGB888", "size": (1024,768)}))
+    # picam2.start() 
+    # # cam = cv2.VideoCapture(-1)
+    # cnt = 0
+    # while True:
+    #     cnt+=1
+    #     img = picam2.capture_array()
+    #     cv2.imshow('te.jpg', img)
+    #     if cnt == 10:
+    #         ALPR(model, text_sys, img)
+    #         cnt = 0
+    #     k = cv2.waitKey(1)
+    #     if k != -1:
+    #         break
+    # picam2.close()
 
 

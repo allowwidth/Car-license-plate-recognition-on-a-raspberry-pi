@@ -5,8 +5,9 @@ import queue
 import numpy as np
 import time
 import threading
+import lcd1602
 from onnxruntime_infer.rapid_ocr_api import TextSystem
-from picamera2.picamera2 import Picamera2
+from picamera2.picamera2 import Picamera2, Preview
 
 def show_img(name, img):
     cv2.imshow(name, img)
@@ -14,14 +15,8 @@ def show_img(name, img):
     cv2.destroyAllWindows()
 
 def cropImg(img, boxes, size):
-    #(H, W) = size
-    #h_s = H/416
-    #w_s = W/416
     x,y,w,h = boxes
     crop_img = img[y:y+h, x:x+w]
-    #mx = max(crop_img.shape[:2])
-    #scale = 300/mx
-    #crop_img = cv2.resize(crop_img, None, fx=scale*w_s, fy=scale*h_s)
     return crop_img
 
 
@@ -62,7 +57,7 @@ def create_boxes(bshape):
     box[0][3] = np.array([0, y])
     return box
 
-def ALPR(model, text_sys, img):
+def ALPR(model, text_sys, img, lcd, cnt):
     global can_put
     size = img.shape[:2]
     img = cv2.resize(img, (416, 416), interpolation=cv2.INTER_AREA)
@@ -76,82 +71,67 @@ def ALPR(model, text_sys, img):
         print("could not detect number plate")
         return
     can_put=False
-    name = 'croped.jpg'
+    name = './cropped/cropped' + str(cnt) + '.jpg'
     #show_img('croped', crop_img)
     cv2.imwrite(name, crop_img)
     res = rapidOCR(name, box, text_sys)
-    res = sorted(res, key=lambda tup: tup[1])
-    print(res[0][0])
+    try:
+        res = sorted(res, key=lambda tup: tup[1])
+        print(res[0][0])
+        lcd.text(res[0][0], 1)
+    except:
+        print(res)
     can_put=True
 
 
-def process():
+def process(model, text_sys, lcd):
     global q
-    while True:
-        if q.empty() != True:
-            img = q.get()
-            ALPR(model, text_sys, img)
-        
-def show_video():
-    global q
-    q = queue.Queue()
-    cam = cv2.VideoCapture(-1)
     cnt = 0
     while True:
-        cnt+=1
-        ret, img = cam.read()
-        if cnt >= 60 and can_put:
-            q.put(img)
-            cnt = 0
-        cv2.imshow('Imagetest',img)
-        k = cv2.waitKey(1)
-        if k != -1:
-            break
+        if q.empty() != True:
+            img = q.get() # get a frame from queue
+            cnt+=1
+            ALPR(model, text_sys, img, lcd, cnt)
+        
+
 
 def picam_show():
     global q
     global can_put
     can_put=True
-    q = queue.Queue()
+    q = queue.Queue() # a queue that store some frames to be recognized
     cnt = 0
     picam2 = Picamera2()
+    # picam2.start_preview(Preview.QTGL)
+    # main={"format": "RGB888", "size": (1024,768)}
     picam2.configure(picam2.preview_configuration(main={"format": "RGB888", "size": (1024,768)}))
     picam2.start()
     while True:
         cnt+=1
-        img = picam2.capture_array()
-        if cnt >= 45 and can_put:
+        img = picam2.capture_array() #a frame catched from picamera
+        
+        if cnt >= 45 and can_put: #put one frame into queue evrey 45 frames
             q.put(img)
             cnt = 0
-        cv2.imshow('te.jpg', img)
+        # img = cv2.cvtColor(img, cv2.COLOR_RGB2BGR)
+        cv2.imshow('show_frame.jpg', img)
         k = cv2.waitKey(1)
         if k != -1:
             break
     picam2.close()
 
 if __name__ == '__main__':
+    try:
+        lcd = lcd1602.LCD_init()
+        lcd.text("LPR system!", 1)
+    except:
+        print("lcd not detected")
+
     model, text_sys = setup()
-    img_foloer = './images/'
-    img_list = ['car.jpg', 'car4.jpg', 'test.jpg']
     t = threading.Thread(target=picam_show)
-    t1 = threading.Thread(target=process)
+    t1 = threading.Thread(target=process, args=(model, text_sys, lcd))
     t.start()
     t1.start()   
-    # picam2 = Picamera2()
-    # picam2.configure(picam2.preview_configuration(main={"format": "RGB888", "size": (1024,768)}))
-    # picam2.start() 
-    # # cam = cv2.VideoCapture(-1)
-    # cnt = 0
-    # while True:
-    #     cnt+=1
-    #     img = picam2.capture_array()
-    #     cv2.imshow('te.jpg', img)
-    #     if cnt == 10:
-    #         ALPR(model, text_sys, img)
-    #         cnt = 0
-    #     k = cv2.waitKey(1)
-    #     if k != -1:
-    #         break
-    # picam2.close()
+    
 
 

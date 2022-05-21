@@ -19,7 +19,8 @@ import time
 import cv2
 import numpy as np
 import onnxruntime
-
+# from .utils import (DBPostProcess, check_and_read_gif, create_operators,
+#                         draw_text_det_res, transform)
 try:
     from .utils import (DBPostProcess, check_and_read_gif, create_operators,
                         draw_text_det_res, transform)

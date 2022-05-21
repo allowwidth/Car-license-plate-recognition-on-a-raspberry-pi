@@ -16,8 +16,8 @@ text_sys = TextSystem(det_model_path,
                       cls_model_path=cls_model_path,
                       keys_path=keys_path)
 
-image_path = r'../croped.jpg'
-dt_boxes, rec_res = text_sys(image_path)
+image_path = r'../cropped.jpg'
+dt_boxes, rec_res = text_sys(image_path, [])
 print(rec_res)
 visualize(image_path, dt_boxes, rec_res)
 

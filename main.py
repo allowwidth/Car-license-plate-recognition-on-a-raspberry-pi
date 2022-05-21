@@ -22,6 +22,10 @@ def cropImg(img, boxes, size):
 
 
 def setup():
+    ''' 
+        load yolov4 and rapidOCR.
+        do not modified this function.
+    ''' 
     weight_path = r"./yolov4/yolov4-tiny-obj_best.weights"
     cfg_path = r"./yolov4/yolov4-tiny-obj.cfg"
 
@@ -57,31 +61,44 @@ def create_boxes(bshape):
     box[0][3] = np.array([0, y])
     return box
 
+def text_postProcess(text):
+    newT = ""
+    # print("post",text)
+    # print("post",len(text))
+    if len(text) <= 4:         #remove the case which detect fail 
+        return newT 
+    for i in range(len(text)):
+        # print("post",text[i])
+        if text[i].isalpha() or text[i].isdigit():
+            newT += text[i]
+    return newT
+
 def ALPR(model, text_sys, img, lcd, cnt):
     global can_put
     size = img.shape[:2]
-    img = cv2.resize(img, (416, 416), interpolation=cv2.INTER_AREA)
-    res = model.detect(img, 0.3, 0.2)
-    try:
+    img = cv2.resize(img, (416, 416), interpolation=cv2.INTER_AREA) # reszie to smaller pic increase processing speed
+    res = model.detect(img, 0.3, 0.2) #return object position 
+    try: # do below if a license is detected
         classes, confidence, boxes = res
         classes, confidence, boxes = classes[0], confidence[0], boxes[0]
         crop_img = cropImg(img, boxes, size)
         box = []
-    except:
+    except: # otherwise return
         print("could not detect number plate")
         return
-    can_put=False
+    can_put=False #if the model is doing prediction, putting frames into queue is not allow
     name = './cropped/cropped' + str(cnt) + '.jpg'
     #show_img('croped', crop_img)
     cv2.imwrite(name, crop_img)
-    res = rapidOCR(name, box, text_sys)
+    res = rapidOCR(name, box, text_sys) # feed the license plate pic to a text recognition model
     try:
-        res = sorted(res, key=lambda tup: tup[1])
-        print(res[0][0])
-        lcd.text(res[0][0], 1)
+        res = sorted(res, key=lambda tup: tup[1]) # get the result with highest probability one
+        text = text_postProcess(res[0][0]) #keep number and alphabet, remove sign
+        print(text)
+        lcd.text(text, 1) #show result on lcd
     except:
         print(res)
-    can_put=True
+    can_put=True #allow
 
 
 def process(model, text_sys, lcd):
@@ -93,7 +110,27 @@ def process(model, text_sys, lcd):
             cnt+=1
             ALPR(model, text_sys, img, lcd, cnt)
         
-
+def webcam_show():
+    global q
+    global can_put
+    can_put=True
+    q = queue.Queue() # a queue that store some frames to be recognized
+    cnt = 0
+    cap = cv2.VideoCapture(-1)
+    while True:
+        cnt+=1
+        ret, img = cap.read() #a frame catched from webcam
+        
+        if cnt >= 45 and can_put: #put one frame into queue evrey 45 frames
+            q.put(img)
+            cnt = 0
+        # img = cv2.cvtColor(img, cv2.COLOR_RGB2BGR)
+        cv2.imshow('show_frame.jpg', img)
+        k = cv2.waitKey(1)
+        if k != -1:
+            break
+    cap.release()
+    cv2.destroyAllWindows()
 
 def picam_show():
     global q
@@ -102,8 +139,6 @@ def picam_show():
     q = queue.Queue() # a queue that store some frames to be recognized
     cnt = 0
     picam2 = Picamera2()
-    # picam2.start_preview(Preview.QTGL)
-    # main={"format": "RGB888", "size": (1024,768)}
     picam2.configure(picam2.preview_configuration(main={"format": "RGB888", "size": (1024,768)}))
     picam2.start()
     while True:
@@ -119,6 +154,7 @@ def picam_show():
         if k != -1:
             break
     picam2.close()
+    cv2.destroyAllWindows()
 
 if __name__ == '__main__':
     try:
@@ -128,7 +164,7 @@ if __name__ == '__main__':
         print("lcd not detected")
 
     model, text_sys = setup()
-    t = threading.Thread(target=picam_show)
+    t = threading.Thread(target=webcam_show) #target= webcam_show or picam_show
     t1 = threading.Thread(target=process, args=(model, text_sys, lcd))
     t.start()
     t1.start()   
